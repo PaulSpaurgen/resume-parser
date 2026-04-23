@@ -5,7 +5,6 @@ interface ResumeViewProps {
 }
 
 export default function ResumeView({ resume }: ResumeViewProps) {
-  console.log("resume", resume);
   if (!resume) {
     return (
       <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-4">

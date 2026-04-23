@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useChat } from "../../hooks/useChat";
-import { useSuggestionsStore } from "../../store/suggestionsStore";
 import { ChatPanel } from "./ChatPanel";
 import { ResumeSidebar } from "./ResumeSidebar";
 import FlaggedList from "../server/FlaggedList";

@@ -42,7 +42,7 @@ export function useChat(): UseChatResult {
   
   const sendMessage = async (content: string): Promise<void> => {
     const trimmed = content.trim();
-    if (!trimmed || loading) {
+    if (!trimmed || loading || !resume) {
       return;
     }
 
@@ -53,7 +53,7 @@ export function useChat(): UseChatResult {
     setError(null);
 
     try {
-      const response = await sendChatMessage({ message: trimmed, resume: resume!, history: nextHistory });
+      const response = await sendChatMessage({ message: trimmed, resume, history: store.messages });
       setStore((prev) => ({ ...prev, messages: [...prev.messages, response.reply] }));
     } catch {
       setError("Assistant response failed. Please retry.");

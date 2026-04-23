@@ -6,30 +6,48 @@ function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-export async function generateChatReplyMock(
-  message: string,
-  history: ChatMessage[],
-): Promise<ChatMessage> {
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+function summarizeResumeEvidence(resume: Resume): { headline: string; citations: string[] } {
+  const topExperience = resume.experience.slice(0, 2);
+  const topSkills = resume.skills.slice(0, 4);
+  const citations = topExperience.map(
+    (item) => `${item.title} | ${item.company} | ${item.duration}`,
+  );
+  const headlineParts = [
+    resume.headline ? `Headline: ${resume.headline}` : "",
+    topSkills.length > 0 ? `Skills: ${topSkills.join(", ")}` : "",
+  ].filter(Boolean);
 
-  const turns = history.length + 1;
-  const content = `Based on the resume, this candidate shows strong frontend ownership and measurable impact. For your question "${message}", I would focus on their App Router migration and mentoring outcomes.`;
+  return {
+    headline:
+      headlineParts.length > 0
+        ? headlineParts.join(" | ")
+        : "Resume includes limited structured detail.",
+    citations,
+  };
+}
+
+function buildGroundedFallbackChat(message: string, resume: Resume): ChatMessage {
+  const evidence = summarizeResumeEvidence(resume);
+  const content =
+    `I can answer this using only the uploaded resume. For "${message}", the strongest evidence available is: ${evidence.headline}. ` +
+    "If you need a deeper answer, ask about a specific role, date range, or skill shown in the resume.";
 
   return {
     id: createId("assistant"),
     role: "assistant",
-    content: `${content} (Turn ${turns})`,
+    content,
     createdAt: new Date().toISOString(),
-    citations: [
-      { id: "cite-1", label: "Nova Labs | Senior Frontend Engineer | 2021 - Present" },
-    ],
+    citations: evidence.citations.slice(0, 2).map((label, index) => ({
+      id: `cite-${index + 1}`,
+      label,
+    })),
   };
 }
 
 export async function generateChatReply(message: string, resume: Resume, history: ChatMessage[]): Promise<ChatMessage> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return generateChatReplyMock(message, history);
+    return buildGroundedFallbackChat(message, resume);
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -85,7 +103,7 @@ export async function generateChatReply(message: string, resume: Resume, history
   if (!response.ok) {
     const details = await response.text();
     console.error("OpenAI chat failed:", details);
-    return generateChatReplyMock(message, history);
+    return buildGroundedFallbackChat(message, resume);
   }
 
   const completion = (await response.json()) as {
@@ -94,13 +112,13 @@ export async function generateChatReply(message: string, resume: Resume, history
 
   const content = completion.choices?.[0]?.message?.content;
   if (!content) {
-    return generateChatReplyMock(message, history);
+    return buildGroundedFallbackChat(message, resume);
   }
 
   try {
     const parsed = JSON.parse(content) as { content?: string; citations?: string[] };
     if (!parsed.content || typeof parsed.content !== "string") {
-      return generateChatReplyMock(message, history);
+      return buildGroundedFallbackChat(message, resume);
     }
 
     const citations =
@@ -119,44 +137,36 @@ export async function generateChatReply(message: string, resume: Resume, history
       })),
     };
   } catch {
-    return generateChatReplyMock(message, history);
+    return buildGroundedFallbackChat(message, resume);
   }
-}
-
-export async function generateSuggestionsMock(resume: Resume): Promise<Suggestion[]> {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-
-  const latestRole = resume.experience[0]?.title ?? "this candidate";
-  const coreSkill = resume.skills[0] ?? "core skills";
-
-  return [
-    {
-      id: createId("sugg"),
-      question: `What evidence in the resume indicates leadership impact in the ${latestRole} role?`,
-    },
-    {
-      id: createId("sugg"),
-      question: `How strongly does the resume demonstrate depth in ${coreSkill} for this hiring need?`,
-    },
-    {
-      id: createId("sugg"),
-      question: "Which resume bullets best support senior-level ownership and delivery?",
-    },
-    {
-      id: createId("sugg"),
-      question: "What gaps or unclear areas in the resume should the recruiter validate in interview?",
-    },
-  ];
 }
 
 interface OpenAISuggestionsPayload {
   suggestions: string[];
 }
 
+function buildGroundedFallbackSuggestions(resume: Resume): Suggestion[] {
+  const latestRole = resume.experience[0]?.title ?? "the latest role";
+  const longestRole = resume.experience.at(-1)?.title ?? "their previous roles";
+  const topSkill = resume.skills[0] ?? "their listed skills";
+
+  const questions = [
+    `What evidence in ${latestRole} suggests readiness for this role?`,
+    `Which accomplishments in ${longestRole} indicate sustained impact over time?`,
+    `How strong is the depth in ${topSkill} based on resume evidence?`,
+    "What important gaps or unclear areas should be validated in interview?",
+  ];
+
+  return questions.map((question) => ({
+    id: createId("sugg"),
+    question,
+  }));
+}
+
 export async function generateSuggestions(resume: Resume): Promise<Suggestion[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return generateSuggestionsMock(resume);
+    return buildGroundedFallbackSuggestions(resume);
   }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -205,7 +215,7 @@ export async function generateSuggestions(resume: Resume): Promise<Suggestion[]>
   if (!response.ok) {
     const details = await response.text();
     console.error("OpenAI suggestions failed:", details);
-    return generateSuggestionsMock(resume);
+    return buildGroundedFallbackSuggestions(resume);
   }
 
   const completion = (await response.json()) as {
@@ -214,13 +224,13 @@ export async function generateSuggestions(resume: Resume): Promise<Suggestion[]>
 
   const content = completion.choices?.[0]?.message?.content;
   if (!content) {
-    return generateSuggestionsMock(resume);
+    return buildGroundedFallbackSuggestions(resume);
   }
 
   try {
     const parsed = JSON.parse(content) as OpenAISuggestionsPayload;
     if (!Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) {
-      return generateSuggestionsMock(resume);
+      return buildGroundedFallbackSuggestions(resume);
     }
 
     const sanitized = parsed.suggestions
@@ -230,7 +240,7 @@ export async function generateSuggestions(resume: Resume): Promise<Suggestion[]>
       .slice(0, 6);
 
     if (sanitized.length === 0) {
-      return generateSuggestionsMock(resume);
+      return buildGroundedFallbackSuggestions(resume);
     }
 
     return sanitized.map((question) => ({
@@ -238,6 +248,6 @@ export async function generateSuggestions(resume: Resume): Promise<Suggestion[]>
       question,
     }));
   } catch {
-    return generateSuggestionsMock(resume);
+    return buildGroundedFallbackSuggestions(resume);
   }
 }
