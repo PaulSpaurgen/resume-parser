@@ -14,50 +14,39 @@ interface OpenAIResume {
   experience: OpenAIResumeExperience[];
 }
 
-function ensurePdfRuntimePolyfills(): void {
-  if (typeof globalThis.DOMMatrix === "undefined") {
-    class DOMMatrixPolyfill {
-      public a = 1;
-      public b = 0;
-      public c = 0;
-      public d = 1;
-      public e = 0;
-      public f = 0;
-    }
-
-    globalThis.DOMMatrix = DOMMatrixPolyfill as unknown as typeof DOMMatrix;
-  }
+interface PdfTextItemLike {
+  str?: string;
 }
 
-type PDFParseClass = {
-  new (options: { data: Buffer }): {
-    getText: () => Promise<{ text: string }>;
-    destroy: () => Promise<void>;
-  };
-};
-
 export async function parseResume(fileBuffer: Buffer): Promise<Resume> {
-  ensurePdfRuntimePolyfills();
-  const { PDFParse } = (await import("pdf-parse")) as { PDFParse: PDFParseClass };
-
-  let parser: InstanceType<PDFParseClass> | null = null;
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = "pdfjs-dist/legacy/build/pdf.worker.mjs";
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(fileBuffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableFontFace: true,
+  });
 
   try {
-    parser = new PDFParse({
-      data: fileBuffer,
-    });
+    const pdf = await loadingTask.promise;
+    const textChunks: string[] = [];
 
-    const data = await parser.getText();
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      for (const item of textContent.items as PdfTextItemLike[]) {
+        if (typeof item.str === "string" && item.str.trim().length > 0) {
+          textChunks.push(item.str.trim());
+        }
+      }
+    }
 
-    const rawText = data.text;
+    const rawText = textChunks.join("\n");
     return await buildStructuredResume(rawText);
   } catch (error) {
     console.error("Error parsing resume:", error);
     throw error;
-  } finally {
-    if (parser) {
-      await parser.destroy();
-    }
   }
 }
 

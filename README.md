@@ -12,7 +12,7 @@ Prototype for the Exterview assignment task 1:
 - React Server + Client Components
 - Zustand for client-side state slices
 - OpenAI Chat Completions API (`gpt-4o-mini`)
-- `pdf-parse` for PDF text extraction
+- `pdfjs-dist` for PDF text extraction
 - Tailwind CSS for UI styling
 
 ## Why this backend approach
@@ -51,7 +51,7 @@ npm run dev
 ### 1) Resume upload and ingestion
 
 - Upload accepts PDF via `UploadInput`.
-- `/api/upload` parses the file using `pdf-parse` (`parser.ts`).
+- `/api/upload` parses the file using `pdfjs-dist` (`parser.ts`).
 - Parsed text is transformed into a structured `Resume` object:
   - Primary path: OpenAI schema extraction (name, headline, skills, experience).
   - Fallback path: heuristic parsing when extraction fails or key is missing.
