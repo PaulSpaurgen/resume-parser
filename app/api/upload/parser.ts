@@ -14,39 +14,34 @@ interface OpenAIResume {
   experience: OpenAIResumeExperience[];
 }
 
-interface PdfTextItemLike {
-  str?: string;
+interface PDFParseInstance {
+  getText: () => Promise<{ text: string }>;
+  destroy: () => Promise<void>;
 }
 
 export async function parseResume(fileBuffer: Buffer): Promise<Resume> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = "pdfjs-dist/legacy/build/pdf.worker.mjs";
-  const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(fileBuffer),
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    disableFontFace: true,
-  });
+  const [{ CanvasFactory }, { PDFParse }] = await Promise.all([
+    import("pdf-parse/worker"),
+    import("pdf-parse"),
+  ]);
+  let parser: PDFParseInstance | null = null;
 
   try {
-    const pdf = await loadingTask.promise;
-    const textChunks: string[] = [];
+    parser = new PDFParse({
+      data: fileBuffer,
+      CanvasFactory,
+    }) as PDFParseInstance;
 
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const textContent = await page.getTextContent();
-      for (const item of textContent.items as PdfTextItemLike[]) {
-        if (typeof item.str === "string" && item.str.trim().length > 0) {
-          textChunks.push(item.str.trim());
-        }
-      }
-    }
-
-    const rawText = textChunks.join("\n");
+    const data = await parser.getText();
+    const rawText = data.text;
     return await buildStructuredResume(rawText);
   } catch (error) {
     console.error("Error parsing resume:", error);
     throw error;
+  } finally {
+    if (parser) {
+      await parser.destroy();
+    }
   }
 }
 
