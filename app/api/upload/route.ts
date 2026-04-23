@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
     const resume = await parseResume(buffer);
 
     return NextResponse.json({ resume });
-  } catch {
+  } catch (error) {
+    console.error("Upload parsing failed:", error);
     return NextResponse.json({ error: "Failed to parse resume." }, { status: 500 });
   }
 }

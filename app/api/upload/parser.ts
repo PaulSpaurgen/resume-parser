@@ -1,6 +1,3 @@
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { PDFParse } from "pdf-parse";
 import type { Resume } from "../../(resume)/types/resume";
 
 interface OpenAIResumeExperience {
@@ -17,14 +14,33 @@ interface OpenAIResume {
   experience: OpenAIResumeExperience[];
 }
 
-export async function parseResume(fileBuffer: Buffer): Promise<Resume> {
-  const workerPath = path.join(
-    process.cwd(),
-    "node_modules/pdf-parse/dist/worker/pdf.worker.mjs"
-  );
-  PDFParse.setWorker(pathToFileURL(workerPath).href);
+function ensurePdfRuntimePolyfills(): void {
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    class DOMMatrixPolyfill {
+      public a = 1;
+      public b = 0;
+      public c = 0;
+      public d = 1;
+      public e = 0;
+      public f = 0;
+    }
 
-  let parser: PDFParse | null = null;
+    globalThis.DOMMatrix = DOMMatrixPolyfill as unknown as typeof DOMMatrix;
+  }
+}
+
+type PDFParseClass = {
+  new (options: { data: Buffer }): {
+    getText: () => Promise<{ text: string }>;
+    destroy: () => Promise<void>;
+  };
+};
+
+export async function parseResume(fileBuffer: Buffer): Promise<Resume> {
+  ensurePdfRuntimePolyfills();
+  const { PDFParse } = (await import("pdf-parse")) as { PDFParse: PDFParseClass };
+
+  let parser: InstanceType<PDFParseClass> | null = null;
 
   try {
     parser = new PDFParse({
